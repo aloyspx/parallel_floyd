@@ -5,7 +5,7 @@
 #include "mpi.h"
 
 /*
- * Name : Parallel Floyd Algorithm
+ * Name : Pipeline Parallel Floyd Algorithm
  * Owner : Aloys Portafaix
  */
 
@@ -46,38 +46,18 @@ int main(int argc, char *argv[]){
             MPI_Scatter(&matrix, 0, MPI_INT, &recv_data, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
         }
 
-        // update section of the matrix associated to processor except if it is the kth row or column
-        int proc_row = rank*SIZE/num_processes;
-        int offset = rank%(num_processes/SIZE) * (SIZE*SIZE/num_processes);
-        if(proc_row != k) {
-            for (i = 0; i < SIZE*SIZE/num_processes; i++) {
-                recv_data[i] = min(matrix[proc_row][i + offset], matrix[proc_row][k] + matrix[k][i + offset]);
-//                fprintf(stderr,"k : %d rank : %d proc_row %d offset %d min( [%d][%d] %d, [%d][%d] [%d][%d] %d) \n",k, rank, proc_row, offset, proc_row, i+offset, matrix[proc_row][i + offset], proc_row, k, k, i + offset,  matrix[proc_row][k] + matrix[k][i + offset]);
-            }
-        }
-
-
-        // update matrix
-        int *temp_mat = NULL;
-        if(rank == MASTER){
-            temp_mat = malloc(SIZE*SIZE*sizeof(int));
-            MPI_Gather(recv_data, SIZE*SIZE/num_processes, MPI_INT, temp_mat, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
-
-            // update matrix with data received
-            int row, col;
-            int count = 0;
-            for(row = 0; row < SIZE; row++){
-                for(col = 0; col < SIZE; col++){
-                     matrix[row][col] = temp_mat[count];
-                     count++;
+        // update local row associated to processor except if it is the kth row or column
+        if(rank != k) {
+            for (i = 0; i < SIZE; i++) {
+                if(i != k){
+                    recv_data[i] = min(matrix[rank][i], matrix[rank][k] + matrix[k][i]);
                 }
             }
-        }else{
-            MPI_Gather(recv_data, SIZE*SIZE/num_processes, MPI_INT, temp_mat, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
         }
 
-        // broadcast changes to matrix
-        MPI_Bcast(matrix, SIZE*SIZE, MPI_INT, MASTER, MPI_COMM_WORLD);
+        // instead of broadcasting each element sends their part of the matrix
+        MPI_Send(recv_data, SIZE, MPI_INT, );
+
     }
 
     if(rank == MASTER) {

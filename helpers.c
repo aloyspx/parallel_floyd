@@ -1,4 +1,9 @@
-void printProcMatrix(int recv_data[], int rank, int num_processes){
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "mpi.h"
+
+void printProcMatrix(int recv_data[], int rank, int num_processes, int SIZE){
     int *temp_mat = NULL;
 
     if(rank == 0){
