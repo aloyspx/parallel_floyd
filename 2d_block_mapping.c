@@ -76,7 +76,7 @@ int main(int argc, char *argv[]){
             MPI_Gather(recv_data, SIZE*SIZE/num_processes, MPI_INT, temp_mat, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
         }
 
-        // broadcast changes to matrix
+        // broadcast gathered matrix from master to all child processes
         MPI_Bcast(matrix, SIZE*SIZE, MPI_INT, MASTER, MPI_COMM_WORLD);
     }
 
