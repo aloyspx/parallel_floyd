@@ -19,22 +19,22 @@ void printMatrix(int arr[][SIZE]);
 
 int main(int argc, char *argv[]){
     int rank, num_processes, recv_data[SIZE];
-//    int matrix[SIZE][SIZE] = {{0, 3,   INF, 7},
-//                              {8, 0,   2, INF},
-//                              {5, INF, 0,   1},
-//                              {2, INF, INF, 0}};
-    int matrix[SIZE][SIZE];
+    int matrix[SIZE][SIZE] = {{0, 3,   INF, 7},
+                              {8, 0,   2, INF},
+                              {5, INF, 0,   1},
+                              {2, INF, INF, 0}};
+//    int matrix[SIZE][SIZE];
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &num_processes);
 
     if(rank == MASTER){
-        generateMatrix(matrix);
+//        generateMatrix(matrix);
         printMatrix(matrix);
     }
 
-    MPI_Bcast(matrix, SIZE*SIZE, MPI_INT, MASTER, MPI_COMM_WORLD);
+//    MPI_Bcast(matrix, SIZE*SIZE, MPI_INT, MASTER, MPI_COMM_WORLD);
 
     // floyd algorithm
     int k, i;
@@ -49,12 +49,11 @@ int main(int argc, char *argv[]){
         // update section of the matrix associated to processor except if it is the kth row or column
         int proc_row = rank*SIZE/num_processes;
         int offset = rank%(num_processes/SIZE) * (SIZE*SIZE/num_processes);
-        if(proc_row != k) {
-            for (i = 0; i < SIZE*SIZE/num_processes; i++) {
-                recv_data[i] = min(matrix[proc_row][i + offset], matrix[proc_row][k] + matrix[k][i + offset]);
+        for (i = 0; i < SIZE*SIZE/num_processes; i++) {
+            recv_data[i] = min(matrix[proc_row][i + offset], matrix[proc_row][k] + matrix[k][i + offset]);
 //                fprintf(stderr,"k : %d rank : %d proc_row %d offset %d min( [%d][%d] %d, [%d][%d] [%d][%d] %d) \n",k, rank, proc_row, offset, proc_row, i+offset, matrix[proc_row][i + offset], proc_row, k, k, i + offset,  matrix[proc_row][k] + matrix[k][i + offset]);
-            }
         }
+
 
 
         // update matrix
