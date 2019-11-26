@@ -5,12 +5,12 @@
 #include "mpi.h"
 
 /*
- * Name : Parallel Floyd Algorithm
+ * Name : Pipelined Parallel Floyd Algorithm
  * Owner : Aloys Portafaix
  */
 
 #define MASTER 0
-#define SIZE 4
+#define SIZE 10
 #define INF 9999
 
 int min(int a, int b);
@@ -37,7 +37,7 @@ int main(int argc, char *argv[]){
     MPI_Bcast(matrix, SIZE*SIZE, MPI_INT, MASTER, MPI_COMM_WORLD);
 
     // floyd algorithm
-    int k, i;
+    int k, i, j;
     for(k = 0; k < SIZE; k++){
         // scatter matrix to all processors, each receives one row
         if(rank==0){
@@ -48,59 +48,75 @@ int main(int argc, char *argv[]){
 
         // update section of the matrix associated to processor except if it is the kth row or column
         int proc_row = rank*SIZE/num_processes;
-        int offset = rank%(num_processes/SIZE) * (SIZE*SIZE/num_processes);
-        if(proc_row != k) {
-            for (i = 0; i < SIZE*SIZE/num_processes; i++) {
-                recv_data[i] = min(matrix[proc_row][i + offset], matrix[proc_row][k] + matrix[k][i + offset]);
-//                fprintf(stderr,"k : %d rank : %d proc_row %d offset %d min( [%d][%d] %d, [%d][%d] [%d][%d] %d) \n",k, rank, proc_row, offset, proc_row, i+offset, matrix[proc_row][i + offset], proc_row, k, k, i + offset,  matrix[proc_row][k] + matrix[k][i + offset]);
-            }
+        int offset = rank%(num_processes/SIZE) * (SIZE * SIZE / num_processes);
+        for (i = 0; i < SIZE * SIZE / num_processes; i++) {
+            recv_data[i] = min(matrix[proc_row][i + offset], matrix[proc_row][k] + matrix[k][i + offset]);
+            matrix[proc_row][i + offset] = recv_data[i];
         }
 
-
-        // non-blocking send from Pi,j to Pi+1,j of same row
-        fprintf(stderr, "rank : %d : ", rank);
+        // blocking send from Pi,j to Pi+1,j of same row (tag => 0)
         for(i = 0; i <  num_processes/SIZE; i++){
-            int temp = proc_row*num_processes/SIZE + i;
-            if(temp == rank){
-                continue;
+            int recv_id = proc_row*num_processes/SIZE + i;
+            if(recv_id != rank) {
+                MPI_Send(&recv_data, SIZE * SIZE / num_processes, MPI_INT, recv_id, 0, MPI_COMM_WORLD);
             }
-            fprintf(stderr, "%d ", temp);
         }
-        fprintf(stderr, "\n");
 
-        // non-blocking send from Pi,j to Pi,j+1 of same column
-//        fprintf(stderr, "rank : %d : ", rank);
-//        for(i = 0; i < SIZE; i++){
-//            int temp = rank%(num_processes/SIZE) + i*num_processes/SIZE;
-//            if(temp == rank){
-//                continue;
-//            }
-//            fprintf(stderr, "%d ", temp);
-//        }
-//        fprintf(stderr, "\n");
+        // blocking send from Pi,j to Pi,j+1 of same column (tag => 1)
+        for(i = 0; i < SIZE; i++){
+            int recv_id = rank%(num_processes/SIZE) + i*num_processes/SIZE;
+            if(recv_id != rank) {
+                MPI_Send(&recv_data, SIZE * SIZE / num_processes, MPI_INT, recv_id, 1, MPI_COMM_WORLD);
+            }
+        }
 
-
-        // update matrix
-        int *temp_mat = NULL;
-        if(rank == MASTER){
-            temp_mat = malloc(SIZE*SIZE*sizeof(int));
-            MPI_Gather(recv_data, SIZE*SIZE/num_processes, MPI_INT, temp_mat, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
-
-            // update matrix with data received
-            int row, col;
-            int count = 0;
-            for(row = 0; row < SIZE; row++){
-                for(col = 0; col < SIZE; col++){
-                    matrix[row][col] = temp_mat[count];
-                    count++;
+        // blocking receive of rows from other processes (tag => 0)
+        for(i = 0; i < num_processes/SIZE; i++){
+            int recv_buf[SIZE*SIZE/num_processes];
+            int send_id = proc_row*num_processes/SIZE + i;
+            if(send_id != rank) {
+                MPI_Recv(&recv_buf, SIZE * SIZE / num_processes, MPI_INT, send_id, 0, MPI_COMM_WORLD,
+                         MPI_STATUS_IGNORE);
+                for (j = 0; j < SIZE * SIZE / num_processes; j++) {
+                    int recv_offset = send_id%(num_processes/SIZE) * (SIZE * SIZE / num_processes);
+                    matrix[proc_row][recv_offset + j] = recv_buf[j];
                 }
             }
-        }else{
-            MPI_Gather(recv_data, SIZE*SIZE/num_processes, MPI_INT, temp_mat, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
         }
 
-        // broadcast gathered matrix from master to all child processes
-        MPI_Bcast(matrix, SIZE*SIZE, MPI_INT, MASTER, MPI_COMM_WORLD);
+        // blocking receive of cols from other processes (tag => 1)
+        for(i = 0; i < SIZE; i++){
+            int recv_buf[SIZE*SIZE/num_processes];
+            int send_id = rank%(num_processes/SIZE) + i*num_processes/SIZE;
+            if(send_id != rank){
+                MPI_Recv(&recv_buf, SIZE * SIZE / num_processes, MPI_INT, send_id, 1, MPI_COMM_WORLD,
+                        MPI_STATUS_IGNORE);
+                for(j = 0; j < SIZE * SIZE / num_processes; j++){
+                    int recv_offset = send_id%(num_processes/SIZE) * (SIZE * SIZE / num_processes);
+                    int recv_row = send_id*SIZE/num_processes;
+                    matrix[recv_row][recv_offset + j] = recv_buf[j];
+                }
+            }
+        }
+    }
+    // update matrix
+    int *temp_mat = NULL;
+    if(rank == MASTER){
+        temp_mat = malloc(SIZE*SIZE*sizeof(int));
+        MPI_Gather(recv_data, SIZE*SIZE/num_processes, MPI_INT, temp_mat, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
+
+        // update matrix with data received
+        int row, col;
+        int count = 0;
+        for(row = 0; row < SIZE; row++){
+            for(col = 0; col < SIZE; col++){
+                matrix[row][col] = temp_mat[count];
+                count++;
+            }
+
+        }
+    }else{
+        MPI_Gather(recv_data, SIZE*SIZE/num_processes, MPI_INT, temp_mat, SIZE*SIZE/num_processes, MPI_INT, MASTER, MPI_COMM_WORLD);
     }
 
     if(rank == MASTER) {
@@ -140,10 +156,10 @@ void printMatrix(int arr[][SIZE]){
     int i, j;
     for(i = 0; i < SIZE; i++){
         for(j = 0; j < SIZE; j++){
-            printf("%d ", arr[i][j]);
+            fprintf(stderr,"%d ", arr[i][j]);
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
-    printf("\n");
+    fprintf(stderr, "\n");
 }
 
